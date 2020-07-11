@@ -1,12 +1,9 @@
 <?php
 
-namespace Budabot\User\Modules;
-
-use Budabot\Core\xml;
+namespace Budabot\User\Modules\OWEATHER_MODULE;
 
 /**
- * Authors:
- *	- Nadyita (RK5)
+ * @author Nadyita (RK5) <nadyita@hodorraid.org>
  *
  * @Instance
  *
@@ -32,17 +29,33 @@ class OWeatherController {
 	 */
 	public $moduleName;
 
-	/** @Inject */
+	/**
+	 * @Inject
+	 * @var \Budabot\Core\Text $text
+	 */
 	public $text;
 
-	/** @Inject */
+	/**
+	 * @Inject
+	 * @var \Budabot\Core\SettingManager $settingManager
+	 */
 	public $settingManager;
 
 	/**
 	 * @Setup
 	 */
 	public function setup() {
-		$this->settingManager->add($this->moduleName, "oweather_api_key", "The OpenWeatherMap API key", "edit", "text", "None", "None", '', "mod");
+		$this->settingManager->add(
+			$this->moduleName,
+			"oweather_api_key",
+			"The OpenWeatherMap API key",
+			"edit",
+			"text",
+			"None",
+			"None",
+			"",
+			"mod"
+		);
 	}
 
 	/**
