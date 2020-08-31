@@ -1,6 +1,15 @@
-<?php
+<?php declare(strict_types=1);
 
-namespace Budabot\User\Modules\OWEATHER_MODULE;
+namespace Nadybot\User\Modules\OWEATHER_MODULE;
+
+use JsonException;
+use Nadybot\Core\{
+	CommandReply,
+	Http,
+	HttpResponse,
+	SettingManager,
+	Text,
+};
 
 /**
  * @author Nadyita (RK5) <nadyita@hodorraid.org>
@@ -27,24 +36,21 @@ class OWeatherController {
 	 * Name of the module.
 	 * Set automatically by module loader.
 	 */
-	public $moduleName;
+	public string $moduleName;
 
-	/**
-	 * @Inject
-	 * @var \Budabot\Core\Text $text
-	 */
-	public $text;
+	/** @Inject */
+	public Text $text;
 
-	/**
-	 * @Inject
-	 * @var \Budabot\Core\SettingManager $settingManager
-	 */
-	public $settingManager;
+	/** @Inject */
+	public SettingManager $settingManager;
+
+	/** @Inject */
+	public Http $http;
 
 	/**
 	 * @Setup
 	 */
-	public function setup() {
+	public function setup(): void {
 		$this->settingManager->add(
 			$this->moduleName,
 			"oweather_api_key",
@@ -61,7 +67,7 @@ class OWeatherController {
 	/**
 	 * Try to convert a wind degree into a wind direction
 	 */
-	public function degreeToDirection($degree) {
+	public function degreeToDirection(float $degree): string {
 		$mapping = [
 			  0 => "N",
 			 22 => "NNE",
@@ -95,7 +101,7 @@ class OWeatherController {
 	/**
 	 * Convert the windspeed in m/s into the wind's strength according to beaufort
 	 */
-	public function getWindStrength($speed) {
+	public function getWindStrength(float $speed): string {
 		$beaufortScale = [
 			32.7 => 'hurricane',
 			28.5 => 'violent storm',
@@ -146,7 +152,7 @@ class OWeatherController {
 		return $temp;
 	}
 
-	public function getCountryName($cc) {
+	public function getCountryName(string $cc): string {
 		if (!function_exists("locale_get_display_region")) {
 			return $cc;
 		}
@@ -223,7 +229,7 @@ class OWeatherController {
 	/**
 	 * Convert the result hash of the API into a blob string
 	 */
-	public function weatherToString($data) {
+	public function weatherToString($data): string {
 		$latString     = $data["coord"]["lat"] > 0 ? "N".$data["coord"]["lat"] : "S".(-1 * $data["coord"]["lat"]);
 		$lonString     = $data["coord"]["lon"] > 0 ? "E".$data["coord"]["lon"] : "W".(-1 * $data["coord"]["lon"]);
 		$mapCommand    = $this->text->makeChatcmd("OpenStreetMap", "/start ".$this->getOSMLink($data["coord"]));
@@ -246,7 +252,6 @@ class OWeatherController {
 		$timezone      = $this->tzSecsToHours($data["timezone"]);
 		$sunRise       = date("H:i:s", $data["sys"]["sunrise"] + $data["timezone"]) . " UTC $timezone";
 		$sunSet        = date("H:i:s", $data["sys"]["sunset"] + $data["timezone"]) . " UTC $timezone";
-		$visibility    = "no data";
 		if (array_key_exists("visibility", $data) && $data["visibility"] > 0) {
 			$visibilityKM = number_format($data["visibility"]/1000, 1);
 			$visibilityMiles = number_format($data["visibility"]/1609.3, 1);
@@ -290,9 +295,9 @@ class OWeatherController {
 	 * either false for an unknown error, a string with the error message
 	 * or a hash with the data.
 	 */
-	public function downloadWeather($apiKey, $location, $endpoint="weather", $extraArgs=[]) {
-		$apiUrl = "http://api.openweathermap.org/data/2.5/${endpoint}?".
-			http_build_query(
+	public function downloadWeather($apiKey, $location, $endpoint, $extraArgs, callable $callback) {
+		$this->http->get("http://api.openweathermap.org/data/2.5/${endpoint}")
+			->withQueryParams(
 				array_merge(
 					[
 						"q"     => $location,
@@ -302,26 +307,9 @@ class OWeatherController {
 					],
 					$extraArgs
 				)
-			);
-		$httpOptions = [
-			'http' => [
-				'ignore_errors' => true,
-				'header' => "Content-Type: application/json\r\n"
-			]
-		];
-		$httpContext  = stream_context_create($httpOptions);
-		$response = file_get_contents($apiUrl, false, $httpContext);
-		$data = json_decode($response, true);
-		if (!is_array($data) || !array_key_exists("cod", $data)) {
-			return false;
-		}
-		if ($data["cod"] != 200) {
-			if (array_key_exists("message", $data)) {
-				return $data["message"];
-			}
-			return false;
-		}
-		return $data;
+			)
+			->withHeader("Content-Type", "application/json")
+			->withCallback($callback);
 	}
 
 	/**
@@ -329,23 +317,49 @@ class OWeatherController {
 	 * either false for an unknown error, a string with the error message
 	 * or a hash with the data.
 	 */
-	public function downloadWeatherForecast($apiKey, $location) {
-		return $this->downloadWeather($apiKey, $location, "forecast", ["cnt" => 24]);
+	public function downloadWeatherForecast($apiKey, $location, callable $callback): void {
+		$this->downloadWeather($apiKey, $location, "forecast", ["cnt" => 24], $callback);
 	}
 
 	/**
 	 * @HandlesCommand("forecast")
 	 * @Matches("/^forecast (.+)$/i")
 	 */
-	public function forecastCommand($message, $channel, $sender, $sendto, $args) {
+	public function forecastCommand(string $message, string $channel, string $sender, CommandReply $sendto, array $args): void {
 		$location = $args[1];
 
 		$apiKey = $this->settingManager->get('oweather_api_key');
-		if (strlen($apiKey) != 32) {
+		if (strlen($apiKey) !== 32) {
 			$sendto->reply("There is either no API key or an invalid one was set.");
 			return;
 		}
-		$data = $this->downloadWeatherForecast($apiKey, $location);
+		$this->downloadWeatherForecast(
+			$apiKey,
+			$location,
+			function (HttpResponse $response) use ($sendto): void {
+				$this->renderForecastResponse($response, $sendto);
+			}
+		);
+	}
+
+	protected function renderForecastResponse(HttpResponse $response, CommandReply $sendto): void {
+		try {
+			$data = json_decode($response->body, true, 512, JSON_THROW_ON_ERROR);
+		} catch (JsonException $e) {
+			$sendto->reply("Error decoding weather data.");
+			return;
+		}
+		if (!is_array($data) || !array_key_exists("cod", $data)) {
+			$sendto->reply("Unknown error while looking up the weather.");
+			return;
+		}
+		if ($data["cod"] != 200) {
+			if (array_key_exists("message", $data)) {
+				$sendto->reply("Error looking up the weather: <highlight>{$data['message']}<end>.");
+				return;
+			}
+			$sendto->reply("Unknown error while looking up the weather.");
+		}
 		if (is_string($data)) {
 			$sendto->reply("Error looking up the weather: <highlight>$data<end>.");
 			return;
@@ -367,22 +381,42 @@ class OWeatherController {
 	 * @HandlesCommand("oweather")
 	 * @Matches("/^oweather (.+)$/i")
 	 */
-	public function weatherCommand($message, $channel, $sender, $sendto, $args) {
+	public function weatherCommand(string $message, string $channel, string $sender, CommandReply $sendto, array $args): void {
 		$location = $args[1];
 
 		$apiKey = $this->settingManager->get('oweather_api_key');
-		if (strlen($apiKey) != 32) {
+		if (strlen($apiKey) !== 32) {
 			$sendto->reply("There is either no API key or an invalid one was set.");
 			return;
 		}
-		$data = $this->downloadWeather($apiKey, $location);
-		if (is_string($data)) {
-			$sendto->reply("Error looking up the weather: <highlight>$data<end>.");
+		$this->downloadWeather(
+			$apiKey,
+			$location,
+			"weather",
+			[],
+			function(HttpResponse $response) use ($sendto) {
+				$this->renderWeatherResponse($response, $sendto);
+			}
+		);
+	}
+
+	protected function renderWeatherResponse(HttpResponse $response, CommandReply $sendto): void {
+		try {
+			$data = json_decode($response->body, true, 512, JSON_THROW_ON_ERROR);
+		} catch (JsonException $e) {
+			$sendto->reply("Error decoding weather data.");
 			return;
 		}
-		if (!is_array($data)) {
+		if (!is_array($data) || !array_key_exists("cod", $data)) {
 			$sendto->reply("Unknown error while looking up the weather.");
 			return;
+		}
+		if ($data["cod"] != 200) {
+			if (array_key_exists("message", $data)) {
+				$sendto->reply("Error looking up the weather: <highlight>{$data['message']}<end>.");
+				return;
+			}
+			$sendto->reply("Unknown error while looking up the weather.");
 		}
 		$tempC = number_format($data["main"]["temp"], 1);
 		$weatherString = $data["weather"][0]["description"];
