@@ -420,6 +420,10 @@ class OWeatherController {
 		}
 		$tempC = number_format($data["main"]["temp"], 1);
 		$weatherString = $data["weather"][0]["description"];
+		if (!isset($data["sys"]["country"])) {
+			$sendto->reply("I was unable to find this location in the weather database.");
+			return;
+		}
 		$cc = $this->getCountryName($data["sys"]["country"]);
 
 		$blob = $this->weatherToString($data);
