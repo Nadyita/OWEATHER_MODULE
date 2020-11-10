@@ -235,7 +235,10 @@ class OWeatherController {
 		$mapCommand    = $this->text->makeChatcmd("OpenStreetMap", "/start ".$this->getOSMLink($data["coord"]));
 		$luString      = date("D, Y-m-d H:i:s", $data["dt"])." UTC";
 		$locName       = $data["name"];
-		$locCC         = $this->getCountryName($data["sys"]["country"]);
+		$locCC         = null;
+		if (isset($data["sys"]["country"])) {
+			$locCC         = $this->getCountryName($data["sys"]["country"]);
+		}
 		$tempC         = number_format($data["main"]["temp"], 1);
 		$tempFeelsC    = number_format($data["main"]["feels_like"], 1);
 		$tempF         = number_format($data["main"]["temp"] * 1.8 + 32, 1);
@@ -257,26 +260,26 @@ class OWeatherController {
 			$visibilityMiles = number_format($data["visibility"]/1609.3, 1);
 		}
 
-		$blob = "Last Updated: <highlight>$luString<end><br>" .
-			"<br>" .
-			"Location: <highlight>$locName<end>, <highlight>$locCC<end><br>" .
-			"Timezone: <highlight>UTC $timezone<end><br>" .
-			"Lat/Lon: <highlight>${latString}° ${lonString}°<end> $mapCommand<br>" .
-			"<br>" .
+		$blob = "Last Updated: <highlight>$luString<end>\n" .
+			"\n" .
+			"Location: <highlight>$locName<end>" . (isset($locCC) ? ", <highlight>$locCC<end>" : "") . "\n" .
+			"Timezone: <highlight>UTC $timezone<end>\n" .
+			"Lat/Lon: <highlight>${latString}° ${lonString}°<end> $mapCommand\n" .
+			"\n" .
 			"Currently: <highlight>${tempC}°C<end>".
 				" (<highlight>${tempF}°F<end>)".
-				", <highlight>$weatherString<end><br>".
+				", <highlight>$weatherString<end>\n".
 			"Feels like: <highlight>${tempFeelsC}°C<end>".
-				" (<highlight>${tempFeelsF}°F<end>)<br>".
-			"Clouds: <highlight>${clouds}%<end><br>" .
-			"Humidity: <highlight>${humidity}%<end><br>" .
-			"Visibility: <highlight>${visibilityKM} km<end> (<highlight>${visibilityMiles} miles<end>)<br>" .
-			"Pressure: <highlight>$pressureHPA hPa <end>(<highlight>${pressureHG}\" Hg<end>)<br>" .
-			"Wind: <highlight>$windStrength<end> - <highlight>$windSpeedKMH km/h ($windSpeedMPH mph)<end> from the <highlight>$windDirection<end><br>" .
-			"<br>" .
-			"Sunrise: <highlight>$sunRise<end><br>" .
-			"Sunset: <highlight>$sunSet<end>".
-			"<br><br>".
+				" (<highlight>${tempFeelsF}°F<end>)\n".
+			"Clouds: <highlight>${clouds}%<end>\n" .
+			"Humidity: <highlight>${humidity}%<end>\n" .
+			"Visibility: <highlight>${visibilityKM} km<end> (<highlight>${visibilityMiles} miles<end>)\n" .
+			"Pressure: <highlight>$pressureHPA hPa <end>(<highlight>${pressureHG}\" Hg<end>)\n" .
+			"Wind: <highlight>$windStrength<end> - <highlight>$windSpeedKMH km/h ($windSpeedMPH mph)<end> from the <highlight>$windDirection<end>\n" .
+			"\n" .
+			"Sunrise: <highlight>$sunRise<end>\n" .
+			"Sunset: <highlight>$sunSet<end>\n".
+			"\n".
 			$this->text->makeChatcmd("Forecast for the next 3 days", "/tell <myname> forecast ${locName},${locCC}");
 
 		return $blob;
@@ -420,15 +423,15 @@ class OWeatherController {
 		}
 		$tempC = number_format($data["main"]["temp"], 1);
 		$weatherString = $data["weather"][0]["description"];
-		if (!isset($data["sys"]["country"])) {
-			$sendto->reply("I was unable to find this location in the weather database.");
-			return;
+		$cc = null;
+		if (isset($data["sys"]["country"])) {
+			$cc = $this->getCountryName($data["sys"]["country"]);
 		}
-		$cc = $this->getCountryName($data["sys"]["country"]);
 
 		$blob = $this->weatherToString($data);
 
-		$msg = "The weather for <highlight>" . $data["name"] . "<end>, ${cc} is ".
+		$msg = "The weather for <highlight>" . $data["name"] . "<end>".
+			(isset($cc) ? ", ${cc}" : "") . " is ".
 			"<highlight>${tempC}°C<end> with $weatherString [" . $this->text->makeBlob("Details", $blob) . "]";
 
 		$sendto->reply($msg);
